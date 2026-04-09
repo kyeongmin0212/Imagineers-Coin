@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>업비트 트레이딩 봇 대시보드</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', -apple-system, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+  /* 헤더 */
+  .header { background: linear-gradient(135deg, #1a1d2e 0%, #16213e 100%); padding: 20px 28px; border-bottom: 1px solid #2d3748; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  .header-left h1 { font-size: 1.5rem; font-weight: 700; color: #5dade2; }
+  .header-left p { font-size: 0.8rem; color: #718096; margin-top: 2px; }
+  .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .refresh-btn { background: #1a3a5c; color: #5dade2; border: 1px solid #2a4a6c; padding: 8px 18px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; transition: background 0.2s; }
+  .refresh-btn:hover { background: #2a4a6c; color: #fff; }
+  .last-updated { font-size: 0.75rem; color: #718096; text-align: right; }
+  .bot-status { font-size: 0.75rem; text-align: right; }
+  .bot-status.active { color: #68d391; }
+  .bot-status.idle { color: #f6ad55; }
+  .bot-status.stopped { color: #fc8181; }
+
+  /* 메인 컨테이너 */
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+  /* 지표 카드 */
+  .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+  @media (max-width: 1100px) { .metrics-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 700px) { .metrics-grid { grid-template-columns: repeat(2, 1fr); } }
+  .metric-card { background: #1a1d2e; border: 1px solid #2d3748; border-radius: 12px; padding: 16px 20px; min-width: 0; }
+  .metric-card .label { font-size: 0.75rem; color: #718096; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .metric-card .value { font-size: clamp(1rem, 2vw, 1.4rem); font-weight: 700; word-break: break-all; }
+  .metric-card .sub { font-size: 0.75rem; color: #718096; margin-top: 4px; }
+  .positive { color: #ff4d6a; }
+  .negative { color: #5dade2; }
+  .neutral { color: #e2e8f0; }
+  .accent { color: #ffd700; }
+  .warning { color: #f6ad55; }
+
+  /* 위험도 바 */
+  .risk-bar-wrap { margin-top: 6px; background: #2d3748; border-radius: 4px; height: 5px; overflow: hidden; }
+  .risk-bar { height: 100%; border-radius: 4px; transition: width 0.3s; }
+
+  /* 차트 영역 */
+  .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; margin-bottom: 24px; }
+  @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+  .card { background: #1a1d2e; border: 1px solid #2d3748; border-radius: 12px; padding: 20px; }
+  .card-title { font-size: 0.9rem; font-weight: 600; color: #a0aec0; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .chart-wrapper { position: relative; height: 240px; }
+  .chart-note { font-size: 0.72rem; color: #4a5568; margin-top: 8px; text-align: right; }
+
+  /* 포지션 테이블 */
+  .section { background: #1a1d2e; border: 1px solid #2d3748; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+  .section-title { font-size: 0.9rem; font-weight: 600; color: #a0aec0; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 8px; }
+  .badge { background: #2d3748; color: #a0aec0; font-size: 0.7rem; padding: 2px 8px; border-radius: 20px; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 600px; }
+  th { text-align: left; padding: 10px 12px; color: #718096; font-weight: 500; border-bottom: 1px solid #2d3748; font-size: 0.78rem; text-transform: uppercase; white-space: nowrap; }
+  td { padding: 11px 12px; border-bottom: 1px solid #1e2435; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #1e2435; }
+
+  .coin-tag { display: inline-flex; align-items: center; gap: 6px; }
+  .coin-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .coin-name { font-weight: 600; }
+
+  .pct-pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 0.78rem; font-weight: 600; }
+  .pct-pill.pos { background: #3a1520; color: #ff4d6a; }
+  .pct-pill.neg { background: #0a1e2e; color: #5dade2; }
+  .pct-pill.neu { background: #2d3748; color: #a0aec0; }
+
+  .reason-text { color: #718096; font-size: 0.78rem; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .dca-badge { display: inline-block; background: #2a2040; color: #b794f4; font-size: 0.72rem; padding: 1px 7px; border-radius: 12px; }
+
+  /* 탭 */
+  .tab-bar { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 7px 16px; border-radius: 8px; cursor: pointer; font-size: 0.83rem; color: #718096; border: 1px solid transparent; transition: all 0.2s; user-select: none; }
+  .tab.active { background: #1a3a5c; color: #5dade2; border-color: #2a4a6c; }
+  .tab:not(.active):hover { background: #2d3748; color: #e2e8f0; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* 로딩 */
+  .loading { text-align: center; padding: 40px; color: #718096; }
+  .spinner { display: inline-block; width: 30px; height: 30px; border: 3px solid #2d3748; border-top-color: #ffd700; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 10px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-state { text-align: center; padding: 30px; color: #718096; font-size: 0.85rem; }
+
+  /* 모바일 반응형 */
+  @media (max-width: 480px) {
+    .header { padding: 14px 16px; }
+    .header-left h1 { font-size: 1.1rem; }
+    .header-left p { font-size: 0.72rem; }
+    .refresh-btn { padding: 6px 12px; font-size: 0.78rem; }
+
+    .container { padding: 12px; }
+
+    .metrics-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+    .metric-card { padding: 12px 14px; border-radius: 10px; }
+    .metric-card .label { font-size: 0.68rem; margin-bottom: 4px; }
+    .metric-card .value { font-size: 0.95rem; }
+    .metric-card .sub { font-size: 0.68rem; }
+
+    .charts-grid { gap: 12px; margin-bottom: 16px; }
+    .card { padding: 14px; border-radius: 10px; }
+    .card-title { font-size: 0.8rem; margin-bottom: 12px; }
+    .chart-wrapper { height: 180px; }
+    .chart-note { font-size: 0.65rem; }
+
+    .section { padding: 14px; margin-bottom: 16px; border-radius: 10px; }
+    .section-title { font-size: 0.82rem; margin-bottom: 10px; }
+
+    table { font-size: 0.75rem; }
+    th { padding: 8px 8px; font-size: 0.7rem; }
+    td { padding: 8px 8px; }
+
+    .tab { padding: 6px 12px; font-size: 0.78rem; }
+
+    .pagination button { padding: 4px 8px; font-size: 0.72rem; }
+    .pagination span { font-size: 0.7rem; }
+  }
+
+  @media (max-width: 360px) {
+    .metrics-grid { grid-template-columns: 1fr; }
+    .header-left h1 { font-size: 1rem; }
+    .chart-wrapper { height: 160px; }
+  }
+
+  /* 페이지네이션 */
+  .pagination { display: flex; justify-content: center; align-items: center; gap: 6px; margin-top: 14px; }
+  .pagination button { background: #2d3748; color: #a0aec0; border: 1px solid #3d4a5c; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; transition: all 0.2s; }
+  .pagination button:hover { background: #3d4a5c; color: #e2e8f0; }
+  .pagination button.active { background: #1a3a5c; color: #5dade2; border-color: #2a4a6c; }
+  .pagination button:disabled { opacity: 0.4; cursor: default; }
+  .pagination span { color: #718096; font-size: 0.78rem; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1>📈 업비트 트레이딩 봇 대시보드</h1>
+    <p>실시간 투자 현황 모니터링</p>
+  </div>
+  <div class="header-right">
+    <div class="last-updated" id="lastUpdated">로딩 중...</div>
+    <div class="bot-status" id="botStatus"></div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- 지표 카드 -->
+  <div class="metrics-grid" id="metricsGrid">
+    <div class="loading" style="grid-column:1/-1"><div class="spinner"></div><br>데이터 로딩 중...</div>
+  </div>
+
+  <!-- 차트 영역 -->
+  <div class="charts-grid">
+    <div class="card">
+      <div class="card-title">📊 자산 변화 (완결 거래 기준)</div>
+      <div class="chart-wrapper">
+        <canvas id="capitalChart"></canvas>
+      </div>
+      <div class="chart-note">※ 초기자본은 첫 매수 합산 추정값 기준입니다</div>
+    </div>
+    <div class="card">
+      <div class="card-title">🍩 포지션 구성</div>
+      <div class="chart-wrapper">
+        <canvas id="positionChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- 현재 포지션 -->
+  <div class="section">
+    <div class="section-title">
+      💼 현재 보유 포지션
+      <span class="badge" id="positionCount">0개</span>
+    </div>
+    <div id="positionsTable"><div class="loading">데이터 로딩 중...</div></div>
+  </div>
+
+  <!-- 블랙리스트 -->
+  <div class="section" id="blacklistSection" style="display:none">
+    <div class="section-title">
+      🚫 손절 블랙리스트 (매수 제한 중)
+      <span class="badge" id="blacklistCount">0개</span>
+    </div>
+    <div id="blacklistTable"></div>
+  </div>
+
+  <!-- 거래 내역 탭 -->
+  <div class="section">
+    <div class="section-title">📋 거래 내역</div>
+    <div class="tab-bar">
+      <div class="tab active" onclick="switchTab(this, 'completed')">완결 거래</div>
+      <div class="tab" onclick="switchTab(this, 'raw')">전체 매매 로그</div>
+    </div>
+    <div id="tab-completed" class="tab-content active">
+      <div id="completedTable"><div class="loading">데이터 로딩 중...</div></div>
+    </div>
+    <div id="tab-raw" class="tab-content">
+      <div id="rawTable"><div class="loading">데이터 로딩 중...</div></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let capitalChartInst = null;
+let positionChartInst = null;
+const COIN_COLORS = ['#ffd700','#5dade2','#ff6b81','#a29bfe','#55efc4','#fdcb6e','#6c5ce7','#fd79a8','#00cec9','#e17055','#0984e3','#d63031'];
+
+function fmt(n) { return Math.round(n).toLocaleString('ko-KR'); }
+function fmtPct(n) { return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'; }
+function pctClass(n) { return n > 0 ? 'positive' : n < 0 ? 'negative' : 'neutral'; }
+function pctPill(n) { const cls = n > 0 ? 'pos' : n < 0 ? 'neg' : 'neu'; return `<span class="pct-pill ${cls}">${fmtPct(n)}</span>`; }
+function esc(s) { if (!s) return '-'; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function shortDate(s) { return s ? s.replace('T', ' ').substring(0, 16) : '-'; }
+
+function fmtHolding(hours) {
+  if (hours === null || hours === undefined) return '-';
+  if (hours < 1) return '1h 미만';
+  if (hours < 24) return hours + 'h';
+  return Math.floor(hours / 24) + 'd ' + (hours % 24) + 'h';
+}
+
+function switchTab(el, tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+}
+
+function renderBotStatus(minAgo) {
+  const el = document.getElementById('botStatus');
+  if (minAgo === null || minAgo === undefined) {
+    el.textContent = '🤖 봇 상태: 확인 불가';
+    el.className = 'bot-status stopped';
+    return;
+  }
+  if (minAgo <= 35) {
+    el.textContent = `🟢 봇 실행 중 (${minAgo}분 전)`;
+    el.className = 'bot-status active';
+  } else if (minAgo <= 65) {
+    el.textContent = `🟡 봇 대기 중 (${minAgo}분 전)`;
+    el.className = 'bot-status idle';
+  } else {
+    el.textContent = `🔴 봇 꺼짐 (${minAgo}분 전)`;
+    el.className = 'bot-status stopped';
+  }
+}
+
+function riskColor(level) {
+  if (level <= 3) return '#68d391';
+  if (level <= 6) return '#f6ad55';
+  return '#fc8181';
+}
+
+function renderMetrics(m) {
+  const totalAsset = (m.krw_balance || 0) + m.total_current_value;
+  const krwCard = m.krw_balance !== null && m.krw_balance !== undefined
+    ? { label: '현재 총 보유 자산', value: fmt(totalAsset) + '원', sub: `현금 ${fmt(m.krw_balance)}원 + 코인 ${fmt(m.total_current_value)}원`, cls: 'accent' }
+    : { label: '현재 총 보유 자산', value: '-', sub: '조회 실패', cls: 'neutral' };
+
+  const riskLevel = m.risk_level;
+  const riskCard = riskLevel !== null && riskLevel !== undefined
+    ? {
+        label: '시장 위험도 (AI)',
+        value: `${riskLevel} / 10`,
+        sub: riskLevel >= 8 ? '⚠️ 신규 매수 중단 중' : '신규 매수 가능',
+        cls: riskLevel >= 8 ? 'negative' : riskLevel >= 5 ? 'warning' : 'positive',
+        extraHtml: `<div class="risk-bar-wrap"><div class="risk-bar" style="width:${riskLevel*10}%;background:${riskColor(riskLevel)}"></div></div>`
+      }
+    : { label: '시장 위험도 (AI)', value: '-', sub: '캐시 없음', cls: 'neutral', extraHtml: '' };
+
+  const cards = [
+    { ...krwCard, cls: 'neutral' },
+    { label: '현재 평가 자산', value: fmt(m.total_current_value) + '원', sub: `투자금 ${fmt(m.total_invested)}원`, cls: 'neutral', extraHtml: '' },
+    { label: '총 수익률', value: fmtPct(m.total_return_pct), sub: `원금 ${fmt(m.estimated_initial)}원 대비`, cls: pctClass(m.total_return_pct), extraHtml: '' },
+    { label: '보유 포지션', value: m.open_positions + '개', sub: '현재 오픈', cls: 'neutral', extraHtml: '' },
+    { label: '현재 수익률', value: fmt(m.unrealized_pnl) + '원', sub: fmtPct(m.total_invested > 0 ? m.unrealized_pnl / m.total_invested * 100 : 0), cls: pctClass(m.unrealized_pnl), extraHtml: '' },
+    { label: '실현 손익 (수수료 전)', value: fmt(m.total_realized_pnl) + '원', sub: `순수익 ${fmt(m.net_realized_pnl)}원 (수수료 ${fmt(m.total_fees)}원)`, cls: pctClass(m.total_realized_pnl), extraHtml: '' },
+    { label: '총 거래 횟수', value: m.total_raw_trades + '건', sub: `완결 ${m.total_completed_trades}건`, cls: 'neutral', extraHtml: '' },
+    { ...riskCard },
+  ];
+
+  document.getElementById('metricsGrid').innerHTML = cards.map(c => `
+    <div class="metric-card">
+      <div class="label">${c.label}</div>
+      <div class="value ${c.cls}">${c.value}</div>
+      <div class="sub">${c.sub}</div>
+      ${c.extraHtml || ''}
+    </div>
+  `).join('');
+}
+
+function renderPositions(positions) {
+  document.getElementById('positionCount').textContent = positions.length + '개';
+  if (!positions.length) {
+    document.getElementById('positionsTable').innerHTML = '<div class="empty-state">현재 보유 포지션 없음</div>';
+    return;
+  }
+
+  const rows = positions.map((p, i) => {
+    const highestCell = p.highest_price
+      ? `<span style="color:#f6ad55">${p.highest_price.toLocaleString('ko-KR')}원</span>`
+      : '<span style="color:#718096">-</span>';
+    const highestPct = (p.highest_price && p.entry_price)
+      ? ((p.highest_price - p.entry_price) / p.entry_price * 100)
+      : null;
+    const highestPctText = highestPct !== null
+      ? `<div style="font-size:0.72rem;color:#718096;margin-top:2px">(${fmtPct(highestPct)})</div>`
+      : '';
+    const trailingCell = p.trailing_stop_price
+      ? `<span style="color:#fc8181">${fmt(p.trailing_stop_price)}원</span>`
+      : '<span style="color:#718096">-</span>';
+    const dcaCell = p.dca_count > 0
+      ? `<span class="dca-badge">${p.dca_count}회</span>`
+      : '<span style="color:#718096">-</span>';
+    return `
+    <tr>
+      <td><div class="coin-tag"><div class="coin-dot" style="background:${COIN_COLORS[i%COIN_COLORS.length]}"></div><span class="coin-name">${p.coin}</span></div></td>
+      <td>${p.entry_price.toLocaleString('ko-KR')}원</td>
+      <td>${p.current_price ? p.current_price.toLocaleString('ko-KR') + '원' : '-'}</td>
+      <td>${pctPill(p.pnl_pct)}</td>
+      <td class="${pctClass(p.pnl_krw)}">${p.pnl_krw >= 0 ? '+' : ''}${fmt(p.pnl_krw)}원</td>
+      <td>${highestCell}${highestPctText}</td>
+      <td>${p.amount.toLocaleString('ko-KR')}</td>
+      <td>${fmt(p.current_value)}원</td>
+      <td style="color:#718096;font-size:0.78rem">${shortDate(p.timestamp)}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('positionsTable').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>종목</th><th>진입가</th><th>현재가</th><th>수익률</th><th>손익</th>
+          <th>최고가</th><th>보유수량</th><th>평가금액</th><th>매수일</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+let completedPage = 1;
+let _completedTrades = [];
+
+function renderCompletedTrades(trades) {
+  _completedTrades = trades;
+  completedPage = 1;
+  renderCompletedPage();
+}
+
+function renderCompletedPage() {
+  const trades = _completedTrades;
+  if (!trades.length) {
+    document.getElementById('completedTable').innerHTML = '<div class="empty-state">완결된 거래 없음</div>';
+    return;
+  }
+  const perPage = 8;
+  const totalPages = Math.ceil(trades.length / perPage);
+  const start = (completedPage - 1) * perPage;
+  const page = trades.slice(start, start + perPage);
+
+  const rows = page.map(t => `
+    <tr>
+      <td><span class="coin-name">${t.coin}</span></td>
+      <td style="color:#718096;font-size:0.78rem">${shortDate(t.buy_date)}</td>
+      <td>${t.buy_price.toLocaleString('ko-KR')}원</td>
+      <td>${t.sell_price.toLocaleString('ko-KR')}원</td>
+      <td>${t.amount.toLocaleString('ko-KR')}</td>
+      <td style="color:#718096;font-size:0.78rem">${shortDate(t.sell_date)}</td>
+      <td style="color:#718096;font-size:0.78rem">${fmtHolding(t.holding_hours)}</td>
+      <td>${pctPill(t.pnl_pct)}</td>
+      <td class="${pctClass(t.pnl_krw)}">${t.pnl_krw >= 0 ? '+' : ''}${fmt(t.pnl_krw)}원</td>
+      <td style="color:#718096">${fmt(t.fee)}원</td>
+      <td style="color:#a0aec0;font-size:0.78rem;white-space:normal;min-width:180px;max-width:320px;word-break:break-all;line-height:1.4">${esc(t.reason)}</td>
+    </tr>
+  `).join('');
+
+  let paginationHtml = '';
+  if (totalPages > 1) {
+    let btns = `<button onclick="completedPage=1;renderCompletedPage()" ${completedPage===1?'disabled':''}>«</button>`;
+    btns += `<button onclick="completedPage--;renderCompletedPage()" ${completedPage===1?'disabled':''}>‹</button>`;
+    for (let i = 1; i <= totalPages; i++) {
+      btns += `<button onclick="completedPage=${i};renderCompletedPage()" class="${i===completedPage?'active':''}">${i}</button>`;
+    }
+    btns += `<button onclick="completedPage++;renderCompletedPage()" ${completedPage===totalPages?'disabled':''}>›</button>`;
+    btns += `<button onclick="completedPage=${totalPages};renderCompletedPage()" ${completedPage===totalPages?'disabled':''}>»</button>`;
+    paginationHtml = `<div class="pagination">${btns} <span>${completedPage}/${totalPages} (${trades.length}건)</span></div>`;
+  }
+
+  document.getElementById('completedTable').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>종목</th><th>매수일</th><th>매수가</th><th>매도가</th><th>수량</th><th>매도일</th>
+          <th>보유기간</th><th>수익률</th><th>손익</th><th>수수료</th><th>사유</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>${paginationHtml}`;
+}
+
+let rawPage = 1;
+let _rawTrades = [];
+
+function renderRawTrades(trades) {
+  _rawTrades = trades;
+  rawPage = 1;
+  renderRawPage();
+}
+
+function renderRawPage() {
+  const trades = _rawTrades;
+  if (!trades.length) {
+    document.getElementById('rawTable').innerHTML = '<div class="empty-state">매매 로그 없음</div>';
+    return;
+  }
+  const perPage = 8;
+  const totalPages = Math.ceil(trades.length / perPage);
+  const start = (rawPage - 1) * perPage;
+  const page = trades.slice(start, start + perPage);
+
+  const rows = page.map(t => {
+    const isBuy = t.action === 'buy';
+    return `
+      <tr>
+        <td style="color:#718096;font-size:0.78rem">${shortDate(t.timestamp)}</td>
+        <td><span class="coin-name">${t.ticker.replace('KRW-','')}</span></td>
+        <td><span class="pct-pill ${isBuy ? 'pos' : 'neg'}">${isBuy ? '매수' : '매도'}</span></td>
+        <td>${fmt(t.price)}원</td>
+        <td>${parseFloat(t.amount).toFixed(6)}</td>
+        <td>${fmt(t.price * t.amount)}원</td>
+        <td style="color:#a0aec0;font-size:0.78rem;white-space:normal;min-width:180px;max-width:320px;word-break:break-all;line-height:1.4">${esc(t.reason)}</td>
+      </tr>`;
+  }).join('');
+
+  let paginationHtml = '';
+  if (totalPages > 1) {
+    let btns = `<button onclick="rawPage=1;renderRawPage()" ${rawPage===1?'disabled':''}>«</button>`;
+    btns += `<button onclick="rawPage--;renderRawPage()" ${rawPage===1?'disabled':''}>‹</button>`;
+    for (let i = 1; i <= totalPages; i++) {
+      btns += `<button onclick="rawPage=${i};renderRawPage()" class="${i===rawPage?'active':''}">${i}</button>`;
+    }
+    btns += `<button onclick="rawPage++;renderRawPage()" ${rawPage===totalPages?'disabled':''}>›</button>`;
+    btns += `<button onclick="rawPage=${totalPages};renderRawPage()" ${rawPage===totalPages?'disabled':''}>»</button>`;
+    paginationHtml = `<div class="pagination">${btns} <span>${rawPage}/${totalPages} (${trades.length}건)</span></div>`;
+  }
+
+  document.getElementById('rawTable').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>시간</th><th>종목</th><th>구분</th><th>가격</th><th>수량</th><th>금액</th><th>사유</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>${paginationHtml}`;
+}
+
+function renderCapitalChart(chartData) {
+  const ctx = document.getElementById('capitalChart').getContext('2d');
+  if (capitalChartInst) capitalChartInst.destroy();
+
+  if (!chartData.length) {
+    ctx.canvas.parentElement.innerHTML = '<div class="empty-state" style="line-height:240px">완결 거래 후 차트가 표시됩니다</div>';
+    return;
+  }
+
+  const filtered = chartData;
+  const labels = filtered.map(d => d.date);
+  const data = filtered.map(d => d.capital);
+  const colors = data.map((v, i) => i === 0 ? '#5dade2' : (v >= data[i-1] ? '#ff4d6a' : '#5dade2'));
+  const dataMin = Math.min(...data);
+  const dataMax = Math.max(...data);
+  const padding = Math.max((dataMax - dataMin) * 0.15, 500);
+  const yMin = Math.floor((dataMin - padding) / 500) * 500;
+  const yMax = Math.ceil((dataMax + padding) / 500) * 500;
+
+  capitalChartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: '자산 (원)',
+        data,
+        borderColor: '#5dade2',
+        backgroundColor: 'rgba(93,173,226,0.08)',
+        borderWidth: 2,
+        pointRadius: 4,
+        pointBackgroundColor: colors,
+        pointBorderColor: colors,
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` ${ctx.parsed.y.toLocaleString('ko-KR')}원`,
+            afterLabel: (ctx) => {
+              const pt = filtered[ctx.dataIndex];
+              return ` ${pt.ticker} ${pt.pnl_pct >= 0 ? '+' : ''}${pt.pnl_pct}%`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#718096', maxTicksLimit: 6, font: { size: 11 } }, grid: { color: '#1e2435' } },
+        y: {
+          min: yMin,
+          max: yMax,
+          ticks: { color: '#718096', callback: v => Math.round(v).toLocaleString('ko-KR') + '원', font: { size: 11 } },
+          grid: { color: '#1e2435' }
+        }
+      }
+    }
+  });
+}
+
+function renderPositionChart(positions) {
+  const ctx = document.getElementById('positionChart').getContext('2d');
+  if (positionChartInst) positionChartInst.destroy();
+
+  if (!positions.length) {
+    ctx.canvas.parentElement.innerHTML = '<div class="empty-state" style="line-height:240px">보유 포지션 없음</div>';
+    return;
+  }
+
+  positionChartInst = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: positions.map(p => p.coin),
+      datasets: [{
+        data: positions.map(p => p.current_value),
+        backgroundColor: COIN_COLORS.slice(0, positions.length),
+        borderColor: '#0f1117',
+        borderWidth: 3,
+        hoverOffset: 8,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: '#a0aec0', padding: 14, font: { size: 12 } }
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const p = positions[ctx.dataIndex];
+              return ` ${p.coin}: ${ctx.parsed.toLocaleString('ko-KR')}원 (${fmtPct(p.pnl_pct)})`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderBlacklist(blacklist) {
+  const section = document.getElementById('blacklistSection');
+  document.getElementById('blacklistCount').textContent = blacklist.length + '개';
+  if (!blacklist.length) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  const rows = blacklist.map(b => `
+    <tr>
+      <td><span class="coin-name">${b.coin}</span></td>
+      <td style="color:#718096;font-size:0.78rem">${b.expiry}</td>
+      <td><span style="color:#fc8181">${b.remaining_min}분 남음</span></td>
+    </tr>`).join('');
+  document.getElementById('blacklistTable').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>종목</th><th>해제 시각</th><th>남은 시간</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function loadData() {
+  try {
+    const res = await fetch('/api/data');
+    const d = await res.json();
+
+    document.getElementById('lastUpdated').textContent = '업데이트: ' + d.last_updated;
+
+    renderBotStatus(d.bot_last_activity_min);
+    renderMetrics(d.metrics);
+    renderPositions(d.positions);
+    renderCompletedTrades(d.completed_trades);
+    renderRawTrades(d.raw_trades);
+    renderCapitalChart(d.chart);
+    renderPositionChart(d.positions);
+    renderBlacklist(d.blacklist || []);
+
+  } catch (e) {
+    document.getElementById('metricsGrid').innerHTML =
+      `<div style="grid-column:1/-1;text-align:center;padding:40px;color:#fc8181">
+        ⚠️ 데이터 로드 실패<br><small style="color:#718096">${e.message}</small>
+      </div>`;
+  }
+}
+
+loadData();
+let pollTimer = setInterval(loadData, 30000);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    clearInterval(pollTimer);
+  } else {
+    loadData();
+    pollTimer = setInterval(loadData, 30000);
+  }
+});
+
+</script>
+</body>
+</html>

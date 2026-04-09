@@ -1,0 +1,25 @@
+# 환경변수 / API 키
+.evn_autocoin/
+*.env
+
+# 캐시 / 모델
+api_cache/
+lstm_models/
+__pycache__/
+
+# 개인 거래 데이터
+positions.json
+purchased_coins.json
+trade_history.json
+trade_history.json.bak
+
+# 로그
+trading_bot.log
+tunnel.log
+tunnel_url.txt
+
+# 개인 경로 포함 파일
+save_tunnel_url.py
+대시보드 시작.bat
+외부공유 대시보드.bat
+코드 위치.txt
