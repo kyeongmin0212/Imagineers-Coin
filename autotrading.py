@@ -962,7 +962,8 @@ class MarketAnalyzer:
             df = df.copy()
             min_length = 26
             if len(df) < min_length:
-                logger.warning(f"데이터 길이 {len(df)}가 최소 요구 길이 {min_length}보다 짧음")
+                # 신규 상장 코인 등에서 발생 — 호출자가 fallback 처리하거나 지표 없이 진행
+                logger.debug(f"데이터 길이 {len(df)}가 최소 요구 길이 {min_length}보다 짧음 (지표 계산 생략)")
                 return df
             indicator_bb = BollingerBands(close=df['close'])
             df['bb_bbm'] = indicator_bb.bollinger_mavg()
@@ -1142,8 +1143,18 @@ class MarketAnalyzer:
             logger.info(f"{len(tickers)}개 티커 데이터 가져오는 중...")
             market_data = {}
             sample_tickers = tickers
+
+            def _fetch_ohlcv_with_fallback(ticker):
+                # 일봉 우선, 26개 미만(신규 상장 등)이면 4시간봉으로 대체해 지표 계산 가능하도록 함
+                df = pyupbit.get_ohlcv(ticker, interval="day", count=30)
+                if df is None or df.empty or len(df) < 26:
+                    df_h4 = pyupbit.get_ohlcv(ticker, interval="minute240", count=180)
+                    if df_h4 is not None and not df_h4.empty and len(df_h4) >= 26:
+                        return ticker, df_h4
+                return ticker, df
+
             with ThreadPoolExecutor(max_workers=3) as executor:
-                results = list(executor.map(lambda ticker: (ticker, pyupbit.get_ohlcv(ticker, interval="day", count=30)), sample_tickers))
+                results = list(executor.map(_fetch_ohlcv_with_fallback, sample_tickers))
                 for ticker, df in results:
                     if df is not None and not df.empty:
                         coin_data = {
@@ -1496,10 +1507,14 @@ class TradingBot:
                     else:
                         self.stop_loss_manager.update_position(ticker, new_avg_price=avg_price, amount=total_amount)
                         logger.info(f"{ticker} 포지션 동기화: 평균가={avg_price:,.2f}원, 수량={total_amount:.8f}개")
-            for ticker in self.purchased_coins["coins"][:]:
+            # cleanup: purchased_coins와 positions 양쪽을 모두 검사 (불일치한 stale 데이터까지 제거)
+            tracked_tickers = set(self.purchased_coins["coins"]) | set(self.stop_loss_manager.positions.keys())
+            for ticker in tracked_tickers:
                 if ticker not in current_coins:
-                    self.purchased_coins["coins"].remove(ticker)
-                    self.stop_loss_manager.remove_position(ticker)
+                    if ticker in self.purchased_coins["coins"]:
+                        self.purchased_coins["coins"].remove(ticker)
+                    if ticker in self.stop_loss_manager.positions:
+                        self.stop_loss_manager.remove_position(ticker)
                     logger.info(f"{ticker} 코인을 Upbit 계정에서 제거")
             FileManager.save_json(COINS_FILE, self.purchased_coins)
             FileManager.save_json(POSITIONS_FILE, self.stop_loss_manager.positions)

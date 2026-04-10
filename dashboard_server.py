@@ -73,6 +73,38 @@ def get_krw_balance():
     return None
 
 
+def get_upbit_holdings():
+    """업비트 실제 보유 코인 조회 (KRW 제외).
+    반환: {ticker: {'amount': float, 'avg_buy_price': float}}
+    """
+    if not _upbit:
+        return None
+    try:
+        balances = _upbit.get_balances()
+        if not balances or not isinstance(balances, list):
+            return None
+        holdings = {}
+        for b in balances:
+            try:
+                currency = b.get('currency')
+                if not currency or currency == 'KRW':
+                    continue
+                unit = b.get('unit_currency', 'KRW')
+                ticker = f"{unit}-{currency}"
+                if not ticker.startswith('KRW-'):
+                    continue
+                amount = float(b.get('balance', 0)) + float(b.get('locked', 0))
+                if amount <= 0:
+                    continue
+                avg_price = float(b.get('avg_buy_price', 0) or 0)
+                holdings[ticker] = {'amount': amount, 'avg_buy_price': avg_price}
+            except (TypeError, ValueError):
+                continue
+        return holdings
+    except Exception:
+        return None
+
+
 def get_latest_risk_level():
     """가장 최근 AI 시장 분석 캐시에서 risk_level 읽기"""
     try:
@@ -170,6 +202,32 @@ def get_data():
     positions_raw = load_json('positions.json') or {}
     history = load_json('trade_history.json') or {'trades': []}
     trades = history.get('trades', [])
+
+    # 업비트 실제 잔고와 동기화 (사용자가 앱에서 직접 매매한 경우 반영)
+    upbit_holdings = get_upbit_holdings()
+    if upbit_holdings is not None:
+        # 1) 업비트에 없는 코인은 positions에서 제거 (수동 매도 반영)
+        for ticker in list(positions_raw.keys()):
+            if ticker not in upbit_holdings:
+                positions_raw.pop(ticker, None)
+        # 2) 업비트 보유 코인의 수량/평단가를 실제 값으로 갱신, 신규 발견 시 추가
+        for ticker, h in upbit_holdings.items():
+            avg_price = h['avg_buy_price'] or 0
+            amount = h['amount']
+            if ticker in positions_raw:
+                pos = positions_raw[ticker]
+                pos['amount'] = amount
+                if avg_price > 0:
+                    pos['entry_price'] = avg_price
+            else:
+                # 봇이 모르는 수동 매수 코인 — 최소 필드만 채워 추가
+                positions_raw[ticker] = {
+                    'entry_price': avg_price,
+                    'amount': amount,
+                    'stop_loss': 5,
+                    'take_profit': 10,
+                    'timestamp': '',
+                }
 
     # 현재가 조회
     tickers = list(positions_raw.keys())
