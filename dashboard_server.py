@@ -292,10 +292,12 @@ def get_data():
     avg_pnl_pct = sum(t['pnl_pct'] for t in completed) / len(completed) if completed else 0
     unrealized_pnl = round(total_current_value - total_invested)
 
-    # 초기자본 = 현재 KRW잔고 + 현재 투자금 - 순실현손익
+    # 원금 고정 300,000원
     krw_bal = get_krw_balance() or 0
-    estimated_initial = round(krw_bal + total_invested - net_realized_pnl)
-    total_return_pct = round(net_realized_pnl / estimated_initial * 100, 2) if estimated_initial > 0 else 0
+    estimated_initial = 300000
+    # 총 수익률 = (현재 총자산 - 원금) / 원금 * 100  ← 실시간 시세 반영
+    current_total_asset = krw_bal + total_current_value
+    total_return_pct = round((current_total_asset - estimated_initial) / estimated_initial * 100, 2) if estimated_initial > 0 else 0
 
     chart_points = []
     running = estimated_initial
